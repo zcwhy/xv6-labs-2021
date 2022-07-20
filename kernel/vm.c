@@ -327,6 +327,29 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   return -1;
 }
 
+void vmprintlevel(pagetable_t pagetable, int depth) 
+{
+  char *prompt;
+  if(depth == 1) prompt = ".. ";
+  if(depth == 2) prompt = ".. ..";
+  if(depth == 3) prompt = ".. .. ..";
+
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && depth <= 3) {
+      uint64 child = PTE2PA(pte);
+      printf("%s%d: pte %p pa %p\n", prompt, i, pte, PTE2PA(pte));
+      vmprintlevel((pagetable_t)child, depth + 1);
+    }
+  }
+}
+
+void vmprint(pagetable_t pagetable) 
+{
+  printf("page table %p\n", pagetable);
+  vmprintlevel(pagetable, 1);
+}
+
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
 void
