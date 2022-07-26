@@ -70,6 +70,7 @@ sys_sleep(void)
     sleep(&ticks, &tickslock);
   }
   release(&tickslock);
+  backtrace();
   return 0;
 }
 
@@ -81,6 +82,30 @@ sys_kill(void)
   if(argint(0, &pid) < 0)
     return -1;
   return kill(pid);
+}
+
+uint64
+sys_sigalarm(void)
+{
+  struct proc *p = myproc();  
+  int interval;
+
+  if(argint(0, &interval) < 0)
+    return -1;
+  p->interval  = interval;
+  argaddr(1, &p->handler);
+
+  return 0;
+}
+
+uint64
+sys_sigreturn()
+{
+  struct proc *p = myproc();
+  memmove((void *)p->trapframe, (void *)&(p->savestate), sizeof(struct trapframe));
+  p->hasreturn = 1;
+
+  return 0;
 }
 
 // return how many clock tick interrupts have occurred
