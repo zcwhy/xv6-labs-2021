@@ -67,14 +67,40 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15)  {
+    
+    // printf("od\n");
+    uint64 err_address = r_stval();
+
+    if(err_address >= MAXVA) 
+      p->killed = 1;
+    else {
+      pte_t *pte = walk(p->pagetable, err_address, 0);
+      uint64 pa = PTE2PA(*pte);
+
+      if(*pte & PTE_COW) {
+        char *mem;
+        if((mem = kalloc()) == 0)
+          p->killed = 1; 
+        else {
+          uint64 flags = PTE_FLAGS(*pte);
+          memmove(mem, (char *)pa, PGSIZE);
+          uvmunmap(p->pagetable, PGROUNDDOWN(err_address), 1, 1);
+          if(mappages(p->pagetable, PGROUNDDOWN(err_address), PGSIZE, (uint64)mem, (flags | PTE_W) & (~PTE_COW)) < 0) {
+            kfree(mem);
+            p->killed = 1;
+          } 
+        } 
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
 
-  if(p->killed)
-    exit(-1);
+  if(p->killed) 
+   exit(-1);
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)

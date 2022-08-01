@@ -122,6 +122,11 @@ brelse(struct buf *b)
   releasesleep(&b->lock);
 
   acquire(&bcache.lock);
+
+  //这里先释放 b->lock，再修改 b->refcnt是因为如果这个时候有其他进程
+  //在等待这个锁 那么这个时候 b->refcnt一定是大于1的 也就不会被清除
+  // 那如果refcnt == 1了也就是说只有一个进程关心这个 block，所以这个进程
+  // 使用完这个block之后就可以释放了
   b->refcnt--;
   if (b->refcnt == 0) {
     // no one is waiting for it.
