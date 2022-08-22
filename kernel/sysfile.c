@@ -52,6 +52,56 @@ fdalloc(struct file *f)
   return -1;
 }
 
+uint64 
+sys_symlink(void)
+{
+  char target[MAXPATH], path[MAXPATH], name[DIRSIZ];
+  struct inode *ip, *dp;
+  int nw = 0;
+
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  
+  begin_op();
+  
+  // printf("target = %s, path = %s \n", target, path);
+  if((dp = nameiparent(path, name)) == 0) {
+    end_op();
+    return -1;
+  }
+  
+  if((ip = ialloc(dp->dev, T_SYMLINK)) == 0) {
+    end_op();
+    return -1;
+  }
+  ilock(dp);
+  // printf("name = %s\n", name);
+  dirlink(dp, name, ip->inum);
+  // printf("%d\n",dp->inum);
+  // uint off;
+  // dirlookup(dp, name, &off);
+  // printf("file name = %s, off = %d\n", name, off);
+  
+  ilock(ip);
+  ip->major = dp->major;
+  ip->minor = dp->minor;
+  ip->nlink = 1;
+  if((nw = writei(ip, 0, (uint64)target, 0, MAXPATH)) != MAXPATH) {
+    iunlockput(dp);
+    iunlockput(ip);
+    end_op();
+    return -1;
+  }
+
+  iupdate(dp);
+  iupdate(ip);
+  iunlockput(dp);
+  iunlockput(ip);
+ 
+  end_op();
+  return 0;
+}
+
 uint64
 sys_dup(void)
 {
@@ -197,7 +247,7 @@ sys_unlink(void)
     end_op();
     return -1;
   }
-
+  // printf("path = %s, name = %s\n", path, name);
   ilock(dp);
 
   // Cannot unlink "." or "..".
@@ -286,15 +336,15 @@ create(char *path, short type, short major, short minor)
 uint64
 sys_open(void)
 {
-  char path[MAXPATH];
+  char path[MAXPATH], target[MAXPATH];
   int fd, omode;
   struct file *f;
   struct inode *ip;
-  int n;
-
-  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
+  int n, nr;
+  
+  if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0) 
     return -1;
-
+  
   begin_op();
 
   if(omode & O_CREATE){
@@ -320,6 +370,31 @@ sys_open(void)
     iunlockput(ip);
     end_op();
     return -1;
+  }
+  
+  // if not mask O_NOFOLLOW
+  if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)) {
+    uint deepth = 0;
+    
+    while(ip->type == T_SYMLINK) {
+      // read target from inode content
+      if((nr = readi(ip, 0, (uint64)target, 0, MAXPATH)) != MAXPATH) {
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+      iunlock(ip);
+      if((ip = namei(target)) == 0){
+        end_op();
+        return -1;
+      }
+      //too deepth, maybe there have a cycle
+      if(++deepth > 10) {
+        end_op();
+        return -1;
+      }
+      ilock(ip);
+    }
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
