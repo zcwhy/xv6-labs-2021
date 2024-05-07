@@ -22,6 +22,8 @@ struct superblock {
   uint bmapstart;    // Block number of first free map block
 };
 
+struct superblock sb[NDEV];
+
 #define FSMAGIC 0x10203040
 
 #define NDIRECT 12
@@ -38,16 +40,16 @@ struct dinode {
   uint addrs[NDIRECT+1];   // Data block addresses
 };
 
-// Inodes per block.
+// Inodes per block. 一个block有多少inode
 #define IPB           (BSIZE / sizeof(struct dinode))
 
-// Block containing inode i
+// Block containing inode i 含有第i个inode的block
 #define IBLOCK(i, sb)     ((i) / IPB + sb.inodestart)
 
-// Bitmap bits per block
+// Bitmap bits per block 每个block有多少bit（用于bitmap对每一位做0/1判断）
 #define BPB           (BSIZE*8)
 
-// Block of free map containing bit for block b
+// Block of free map containing bit for block b 
 #define BBLOCK(b, sb) ((b)/BPB + sb.bmapstart)
 
 // Directory is a file containing a sequence of dirent structures.

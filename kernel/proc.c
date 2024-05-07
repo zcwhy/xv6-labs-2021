@@ -517,7 +517,7 @@ forkret(void)
     // regular process (e.g., because it calls sleep), and thus cannot
     // be run from main().
     first = 0;
-    fsinit(ROOTDEV);
+    rtfsinit();
   }
 
   usertrapret();

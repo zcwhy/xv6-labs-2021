@@ -8,6 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct filesystem_type;
 
 // bio.c
 void            binit(void);
@@ -35,6 +36,7 @@ int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
 
 // fs.c
+int             rtfsinit();
 void            fsinit(int);
 int             dirlink(struct inode*, char*, uint);
 struct inode*   dirlookup(struct inode*, char*, uint*);
@@ -184,3 +186,8 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+// vfs.c
+int                     register_fs(struct filesystem_type * fs );
+struct filesystem_type* getfs(const char * fs_name);
+void                    vfsinit();

@@ -20,14 +20,32 @@
 #include "fs.h"
 #include "buf.h"
 #include "file.h"
+#include "vfs.h"
+#include "mount.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 // there should be one superblock per disk device, but we run with
 // only one device
-struct superblock sb; 
+// struct superblock sb; 
+
+int            rtfsmount(struct inode*, struct inode*);
+struct inode*  rtfsgetroot(int, int);
+void           readsb(int dev, struct superblock* sb);
+
+struct vfs_operations rtfs_ops = {
+  .fs_init = &rtfsinit,
+  .mount   = &rtfsmount,
+  .getroot = &rtfsgetroot,
+  .readsb  = &readsb,
+};
+
+struct filesystem_type s5fs = {
+  .name = "rtfs",
+  .ops = &rtfs_ops,
+};
 
 // Read the super block.
-static void
+void
 readsb(int dev, struct superblock *sb)
 {
   struct buf *bp;
@@ -38,12 +56,15 @@ readsb(int dev, struct superblock *sb)
 }
 
 // Init fs
-void
-fsinit(int dev) {
-  readsb(dev, &sb);
-  if(sb.magic != FSMAGIC)
+int
+rtfsinit() {
+  register_fs(&s5fs);
+  readsb(ROOTDEV, &sb[ROOTDEV]);
+  if(sb[ROOTDEV].magic != FSMAGIC)
     panic("invalid file system");
-  initlog(dev, &sb);
+  initlog(ROOTDEV, &sb[ROOTDEV]);
+
+  return 0;
 }
 
 // Zero a block.
@@ -68,9 +89,9 @@ balloc(uint dev)
   struct buf *bp;
 
   bp = 0;
-  for(b = 0; b < sb.size; b += BPB){
-    bp = bread(dev, BBLOCK(b, sb));
-    for(bi = 0; bi < BPB && b + bi < sb.size; bi++){
+  for(b = 0; b < sb[dev].size; b += BPB){
+    bp = bread(dev, BBLOCK(b, sb[ROOTDEV]));
+    for(bi = 0; bi < BPB && b + bi < sb[ROOTDEV].size; bi++){
       m = 1 << (bi % 8);
       if((bp->data[bi/8] & m) == 0){  // Is block free?
         bp->data[bi/8] |= m;  // Mark block in use.
@@ -92,7 +113,7 @@ bfree(int dev, uint b)
   struct buf *bp;
   int bi, m;
 
-  bp = bread(dev, BBLOCK(b, sb));
+  bp = bread(dev, BBLOCK(b, sb[ROOTDEV]));
   bi = b % BPB;
   m = 1 << (bi % 8);
   if((bp->data[bi/8] & m) == 0)
@@ -199,8 +220,8 @@ ialloc(uint dev, short type)
   struct buf *bp;
   struct dinode *dip;
 
-  for(inum = 1; inum < sb.ninodes; inum++){
-    bp = bread(dev, IBLOCK(inum, sb));
+  for(inum = 1; inum < sb[ROOTDEV].ninodes; inum++){
+    bp = bread(dev, IBLOCK(inum, sb[ROOTDEV]));
     dip = (struct dinode*)bp->data + inum%IPB;
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
@@ -224,7 +245,7 @@ iupdate(struct inode *ip)
   struct buf *bp;
   struct dinode *dip;
 
-  bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+  bp = bread(ip->dev, IBLOCK(ip->inum, sb[ROOTDEV]));
   dip = (struct dinode*)bp->data + ip->inum%IPB;
   dip->type = ip->type;
   dip->major = ip->major;
@@ -250,6 +271,17 @@ iget(uint dev, uint inum)
   empty = 0;
   for(ip = &itable.inode[0]; ip < &itable.inode[NINODE]; ip++){
     if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
+      if(ip->type == T_MOUNT) {
+        struct inode *rinode = mtablertinode(ip);
+
+        if (rinode == 0) {
+          panic("Invalid Inode on Mount Table");
+        }
+
+        rinode->ref++;
+        release(&itable.lock);
+        return rinode;
+      }
       ip->ref++;
       release(&itable.lock);
       return ip;
@@ -297,7 +329,7 @@ ilock(struct inode *ip)
   acquiresleep(&ip->lock);
 
   if(ip->valid == 0){
-    bp = bread(ip->dev, IBLOCK(ip->inum, sb));
+    bp = bread(ip->dev, IBLOCK(ip->inum, sb[ROOTDEV]));
     dip = (struct dinode*)bp->data + ip->inum%IPB;
     ip->type = dip->type;
     ip->major = dip->major;
@@ -516,6 +548,11 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
   return tot;
 }
 
+struct inode*   
+rtfsgetroot(int major, int minor) {
+  return iget(minor, ROOTINO);
+}
+
 // Directories
 
 int
@@ -582,6 +619,43 @@ dirlink(struct inode *dp, char *name, uint inum)
   return 0;
 }
 
+int             
+rtfsmount(struct inode* devi, struct inode* ip) {
+  struct mntentry *mp;
+  // Read the Superblock
+  rtfs_ops.readsb(ROOTDEV, &sb[ROOTDEV]);
+
+  // Read the root device inode
+  struct inode *devrtip = rtfs_ops.getroot(devi->major, devi->minor);
+  acquire(&mtable.lock);
+  for(mp = &mtable.mpoint[0]; mp < &mtable.mpoint[MOUNTSIZE]; mp++) {
+    if (mp->flag == 0) {
+      found:
+        mp->dev = devi->minor;
+        mp->m_inode = ip;
+        mp->pdata = &sb[devi->minor];
+        mp->flag |= M_USED;
+        mp->m_rtinode = devrtip;
+
+        release(&mtable.lock);
+
+        initlog(devi->minor, &sb[ROOTDEV]);
+        return 0;
+    } else {
+      // 设备已经挂载
+      if (mp->dev == devi->minor) {
+        release(&mtable.lock);
+        return -1;
+      }
+
+      // 挂载点已被占用，重新设置挂载点为新的设备
+      if (ip->dev == mp->m_inode->dev && ip->inum == mp->m_inode->inum)
+        goto found;
+    }
+  }
+  release(&mtable.lock);
+  return -1;
+}
 // Paths
 
 // Copy the next path element from path into name.

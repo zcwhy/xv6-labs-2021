@@ -484,3 +484,28 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_mount(void)
+{
+  char devf[MAXPATH], mt_point[MAXPATH], fstype[MAXPATH];
+  struct inode* ip, *devi;
+
+  if(argstr(0, devf, MAXPATH) < 0 ||
+     argstr(0, fstype, MAXPATH) < 0 ||
+     argstr(0, mt_point, MAXPATH) < 0) {
+      return -1;
+  }
+
+  // get inode
+  ip = namei(mt_point);
+  devi = namei(devf);
+  if(ip == 0 || devi == 0) {
+    return -1;
+  }
+
+  // struct filesystem_type* fs_t = getfs(fstype);
+
+
+  return 0;
+}
