@@ -36,3 +36,9 @@ entry("getpid");
 entry("sbrk");
 entry("sleep");
 entry("uptime");
+<<<<<<< Updated upstream
+=======
+entry("trace");
+entry("sysinfo");
+entry("pthread_create");
+>>>>>>> Stashed changes

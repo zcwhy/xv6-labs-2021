@@ -23,6 +23,14 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+<<<<<<< Updated upstream
+=======
+int trace(int);
+int sysinfo(struct sysinfo *);
+int pthread_create(int *tid, void (*start)(void *), void *arg);
+
+
+>>>>>>> Stashed changes
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -95,3 +95,52 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+<<<<<<< Updated upstream
+=======
+
+
+//enable trace system call
+uint64
+sys_trace(void)
+{
+  int mask;
+
+  if(argint(0, &mask) < 0)
+    return -1;
+  return trace(mask);
+}
+
+uint64
+sys_sysinfo(void)
+{
+  uint64 info;
+
+  if(argaddr(0, &info) < 0) {
+    return -1;
+  }
+  return sysinfo(info);
+}
+
+uint64
+sys_pthread_create(void)
+{
+  uint64 tid_addr, start_routinue, arg_addr;
+
+  if(argaddr(0, &tid_addr) < 0) {
+    return -1;
+  }
+
+  if(argaddr(1, &start_routinue) < 0) {
+    return -1;
+  }
+
+  if(argaddr(2, &arg_addr) < 0) {
+    return -1;
+  }
+  printf("pthread_create entry point\n");
+  return (uint64)0;
+  
+  // return pthread_create(tid_addr, start_routinue, arg_addr);
+}
+
+>>>>>>> Stashed changes
