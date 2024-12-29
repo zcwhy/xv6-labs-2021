@@ -24,6 +24,12 @@ sys_getpid(void)
 }
 
 uint64
+sys_gettid(void)
+{
+  return myproc()->tgid;
+}
+
+uint64
 sys_fork(void)
 {
   return fork();
@@ -95,3 +101,23 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_pthread_create(void)
+{
+  uint64 tid_addr, start_routinue, arg_addr;
+
+  if(argaddr(0, &tid_addr) < 0) {
+    return -1;
+  }
+
+  if(argaddr(1, &start_routinue) < 0) {
+    return -1;
+  }
+
+  if(argaddr(2, &arg_addr) < 0) {
+    return -1;
+  }
+  return thread_create((void *)tid_addr, (void *)start_routinue, (void *)arg_addr);
+}
+

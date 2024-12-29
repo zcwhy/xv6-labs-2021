@@ -92,6 +92,7 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+  int tgid;                    // Thread ID
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
@@ -105,4 +106,21 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+};
+
+
+struct thread {
+  struct spinlock lock;
+
+  // t->lock must be held when using these:
+
+  struct proc *parent;         // Parent process
+  int killed;                  // If non-zero, have been killed
+
+  // these are private to the thread, so t->lock need not be held.
+  struct context context;      // swtch() here to run thread
+  struct trapframe *trapframe; // data page for trampoline.S
+  uint64 kstack;               // Virtual address of kernel stack
+  int tid;                     // thread ID
+  int xstate;                  // Exit status to be returned to parent's process
 };

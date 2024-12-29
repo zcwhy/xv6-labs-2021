@@ -118,6 +118,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->tgid = p->pid;
   p->state = USED;
 
   // Allocate a trapframe page.
@@ -318,6 +319,70 @@ fork(void)
   return pid;
 }
 
+
+// like fork, but does't create new address space.
+int
+thread_create(void *tidaddr, void *start, void *args) {
+  struct proc *np;
+  struct proc *p = myproc();
+
+  // Allocate process.
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // use same pagetable with parent
+  if(copypgtable(p->pagetable, np->pagetable, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+  np->sz = p->sz;
+
+  // init thread user stack
+  uint64 stacktop = PGROUNDUP(p->trapframe->sp);
+  uvmunmap(np->pagetable, stacktop - PGSIZE, 1, 1);
+  uint newsz = uvmalloc(np->pagetable, stacktop - PGSIZE, stacktop);
+  if(newsz == 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
+  for(int i = 0; i < NOFILE; i++)
+    if(p->ofile[i])
+      np->ofile[i] = filedup(p->ofile[i]);
+  np->cwd = idup(p->cwd);
+  safestrcpy(np->name, p->name, sizeof(p->name));
+
+  // pass arg to user thread routine
+  np->trapframe->a0 = (uint64)args;
+  np->trapframe->epc = (uint64)start;
+  np->trapframe->sp = stacktop;
+  
+  np->pid = allocpid();
+  np->tgid = p->pid;
+
+  // set tid for user thread routine
+  if(copyout(np->pagetable, (uint64)tidaddr, (char *)&np->tgid, sizeof(int)) < 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+
+  release(&np->lock);
+
+  acquire(&wait_lock);
+  np->parent = p;
+  release(&wait_lock);
+
+  acquire(&np->lock);
+  np->state = RUNNABLE;
+  release(&np->lock);
+
+  return 0;
+}
+
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
 void
@@ -403,6 +468,7 @@ wait(uint64 addr)
           pid = np->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
                                   sizeof(np->xstate)) < 0) {
+            printf("parent name:%s, parent pid:%d, child name:%s, chid pid:%d\n", p->name, p->pid, np->name, np->pid);
             release(&np->lock);
             release(&wait_lock);
             return -1;

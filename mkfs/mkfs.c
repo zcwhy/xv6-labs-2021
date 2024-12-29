@@ -195,6 +195,7 @@ winode(uint inum, struct dinode *ip)
   wsect(bn, buf);
 }
 
+// read inode to ip, by inum
 void
 rinode(uint inum, struct dinode *ip)
 {
@@ -249,6 +250,11 @@ balloc(int used)
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+/*
+  inum: inode number
+  xp:   appended data pointer
+  n:    appended data size
+*/
 void
 iappend(uint inum, void *xp, int n)
 {
